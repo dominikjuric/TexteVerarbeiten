@@ -1,0 +1,71 @@
+# === Projekt-spezifisch (Daten & Texte) ===
+raw/                 # Rohdaten
+txt/                 # Textausgaben / Texte
+notes/               # persönliche Notizen (falls lokal halten)
+metadata/            # generierte Metadaten
+ocr/                 # OCR-Zwischenstände/Ergebnisse
+processed/           # (optional) abgeleitete Daten/Ergebnisse
+tmp*/
+tmp_*/
+tmp_nougat/
+tmp_surya/
+tmp_surya_mps/
+
+# === Virtuelle Umgebungen / lokale Python-Setups ===
+nougat-env/
+.venv/
+venv/
+env/
+ENV/
+bin/
+include/
+lib/
+pyvenv.cfg
+pip-wheel-metadata/
+__pypackages__/
+
+# === Python & Notebook-Übliches ===
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.eggs/
+build/
+dist/
+.ipynb_checkpoints/
+.pytest_cache/
+.mypy_cache/
+.pytype/
+.coverage
+htmlcov/
+
+# === Große/Modelldateien (falls vorhanden) ===
+*.pt
+*.pth
+*.onnx
+*.ckpt
+*.h5
+*.pb
+
+# === Konfiguration/Secrets (empfohlen) ===
+config.json
+.env
+.env.*
+*.env
+
+# === Editor/OS-Müll ===
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# === Logs, Caches, temporär ===
+logs/
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
+.cache/
+cache/
+
