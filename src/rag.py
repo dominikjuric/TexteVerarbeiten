@@ -32,6 +32,7 @@ DEFAULT_TEMPERATURE = float(CFG.get("rag", {}).get("temperature", 0.0))
 DEFAULT_RESULTS_PER_QUERY = int(CFG.get("rag", {}).get("results_per_query", 5))
 
 
+
 @dataclass
 class SourceAttribution:
     """Represents a retrieved context chunk that informed an answer."""
@@ -64,16 +65,16 @@ class SimpleRAGSession:
     def __init__(
         self,
         *,
-        collection_name: str = DEFAULT_COLLECTION,
-        persist_path: str = DEFAULT_PERSIST_PATH,
+        collection_name: str = "papers",
+        persist_path: str = ".chroma",
         api_key: Optional[str] = None,
         chat_model: str = DEFAULT_MODEL,
         embedding_model: Optional[str] = None,
-        temperature: float = DEFAULT_TEMPERATURE,
-        history_limit: int = DEFAULT_HISTORY_LIMIT,
+        temperature: float = 0.0,
+        history_limit: int = 10,
     ) -> None:
         if api_key is None:
-            api_key = CFG.get("services", {}).get("openai", {}).get("api_key")
+            api_key = CFG.get("OPENAI_API_KEY")
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY fehlt. Bitte in der Umgebung setzen oder .env konfigurieren.")
 
