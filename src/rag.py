@@ -1,18 +1,324 @@
-import chromadb
-from sentence_transformers import SentenceTransformer
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-from src.config import CFG
+"""Simple Retrieval-Augmented Generation utilities without LangChain.
 
-def ask(question: str, k: int = 5):
-    enc = SentenceTransformer("all-MiniLM-L6-v2").encode([question], convert_to_numpy=True)[0].tolist()
-    coll = chromadb.PersistentClient(path=".chroma").get_or_create_collection("papers")
-    res = coll.query(query_embeddings=[enc], n_results=k)
-    ctx = "\n\n".join(res["documents"][0]) if res["documents"] else ""
-    prompt = ChatPromptTemplate.from_template(
-        "Beantworte die Frage ausschließlich anhand des Kontexts.\n\nKontext:\n{context}\n\nFrage: {q}"
-    )
-    llm = ChatOpenAI(api_key=CFG["OPENAI_API_KEY"], model="gpt-4o-mini", temperature=0)
-    chain = prompt | llm | StrOutputParser()
-    return chain.invoke({"context": ctx, "q": question})
+This module exposes a stateful :class:`SimpleRAGSession` that talks directly to
+ChromaDB and the OpenAI chat completions API.  It keeps track of previous
+questions/answers to provide conversational context, and it returns structured
+source attributions for every response so that callers can surface citations in
+their UI.
+"""
+
+from __future__ import annotations
+
+from collections import OrderedDict
+from dataclasses import asdict, dataclass, field
+from functools import lru_cache
+import json
+from typing import Any, Dict, Iterable, List, Optional
+
+from openai import OpenAI
+from sentence_transformers import SentenceTransformer
+
+from src.config import CFG
+from .vector_store import get_collection
+
+
+DEFAULT_MODEL = CFG.get("models", {}).get("chat", "gpt-4o-mini")
+DEFAULT_EMBEDDING_MODEL = CFG.get("models", {}).get("embedding", "all-MiniLM-L6-v2")
+DEFAULT_COLLECTION = CFG.get("rag", {}).get("collection", "papers")
+DEFAULT_PERSIST_PATH = (
+    CFG.get("rag", {}).get("persist_path")
+    or CFG.get("paths", {}).get("chroma")
+    or ".chroma"
+)
+DEFAULT_HISTORY_LIMIT = int(CFG.get("rag", {}).get("history_limit", 10))
+DEFAULT_TEMPERATURE = float(CFG.get("rag", {}).get("temperature", 0.0))
+DEFAULT_RESULTS_PER_QUERY = int(CFG.get("rag", {}).get("results_per_query", 5))
+DEFAULT_CACHE_SIZE = int(CFG.get("rag", {}).get("cache_size", 64))
+
+
+@dataclass
+class SourceAttribution:
+    """Represents a retrieved context chunk that informed an answer."""
+
+    document: str
+    metadata: Dict[str, Any]
+    score: float
+    chunk_id: str
+
+    def display_label(self) -> str:
+        """Human readable label for CLI output."""
+
+        source = self.metadata.get("source") or self.metadata.get("path") or "Unbekannte Quelle"
+        page = self.metadata.get("page")
+        return f"{source} (Seite {page})" if page is not None else str(source)
+
+
+@dataclass
+class ConversationTurn:
+    """Single question/answer exchange including retrieved sources."""
+
+    question: str
+    answer: str
+    sources: List[SourceAttribution] = field(default_factory=list)
+
+
+class SimpleRAGSession:
+    """Stateful RAG helper that manages embeddings, retrieval and chat history."""
+
+    def __init__(
+        self,
+        *,
+        collection_name: str = DEFAULT_COLLECTION,
+        persist_path: str = DEFAULT_PERSIST_PATH,
+        api_key: Optional[str] = None,
+        chat_model: str = DEFAULT_MODEL,
+        embedding_model: Optional[str] = None,
+        temperature: float = DEFAULT_TEMPERATURE,
+        history_limit: int = DEFAULT_HISTORY_LIMIT,
+    ) -> None:
+        if api_key is None:
+            api_key = CFG.get("services", {}).get("openai", {}).get("api_key")
+        if not api_key:
+            raise RuntimeError("OPENAI_API_KEY fehlt. Bitte in der Umgebung setzen oder .env konfigurieren.")
+
+        self._client = OpenAI(api_key=api_key)
+        self._chat_model = chat_model
+        self._temperature = temperature
+        self._history_limit = history_limit
+
+        if embedding_model is None:
+            embedding_model = DEFAULT_EMBEDDING_MODEL
+
+        self._embedder = _load_embedder(embedding_model)
+        try:
+            self._collection = get_collection(collection_name, persist_path=persist_path)
+        except ImportError as exc:  # pragma: no cover - configuration error
+            raise RuntimeError("ChromaDB ist nicht verfügbar. Installiere chromadb für RAG-Funktionen.") from exc
+
+        self._history: List[ConversationTurn] = []
+        self._cache_size = max(0, DEFAULT_CACHE_SIZE)
+        self._embedding_cache: "OrderedDict[str, List[float]]" = OrderedDict()
+        self._retrieval_cache: "OrderedDict[str, List[Dict[str, Any]]]" = OrderedDict()
+        self._answer_cache: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+    @property
+    def chat_model(self) -> str:
+        """Return the currently configured chat model."""
+
+        return self._chat_model
+
+    def ask(self, question: str, *, k: Optional[int] = None) -> Dict[str, Any]:
+        """Answer a question using retrieved context and conversation history.
+
+        Returns a dictionary containing the generated answer, the retrieved
+        sources and the updated conversation history for convenience.
+        """
+
+        if not question.strip():
+            raise ValueError("Die Frage darf nicht leer sein.")
+
+        if k is None:
+            k = DEFAULT_RESULTS_PER_QUERY
+        cache_key = self._make_cache_key(question)
+
+        cached_answer = self._cache_get(self._answer_cache, cache_key)
+        if cached_answer:
+            sources = self._clone_sources(cached_answer["sources"])
+            answer_with_sources = cached_answer["answer"]
+            turn = ConversationTurn(question=question, answer=answer_with_sources, sources=sources)
+            self._append_history(turn)
+            return {
+                "answer": answer_with_sources,
+                "sources": sources,
+                "history": list(self._history),
+            }
+
+        embedding = self._encode_question(question, cache_key)
+        sources = self._get_sources_with_cache(question, k, cache_key, embedding)
+        context = self._build_context_prompt(sources)
+        messages = self._build_messages(question, context)
+
+        response = self._client.chat.completions.create(
+            model=self._chat_model,
+            temperature=self._temperature,
+            messages=messages,
+        )
+        answer = response.choices[0].message.content.strip()
+        answer_with_sources = self._append_source_section(answer, sources)
+
+        self._cache_set(
+            self._answer_cache,
+            cache_key,
+            {"answer": answer_with_sources, "sources": [asdict(source) for source in sources]},
+        )
+
+        turn = ConversationTurn(question=question, answer=answer_with_sources, sources=sources)
+        self._append_history(turn)
+
+        return {
+            "answer": answer_with_sources,
+            "sources": sources,
+            "history": list(self._history),
+        }
+
+    def get_history(self) -> List[ConversationTurn]:
+        """Return the stored conversation history."""
+
+        return list(self._history)
+
+    def clear_history(self) -> None:
+        """Forget the conversation context."""
+
+        self._history.clear()
+
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
+    def _retrieve_sources(
+        self,
+        question: str,
+        k: int,
+        *,
+        embedding: Optional[List[float]] = None,
+    ) -> List[SourceAttribution]:
+        if embedding is None:
+            embedding = self._embedder.encode([question], convert_to_numpy=True)[0].tolist()
+
+        results = self._collection.query(
+            query_embeddings=[embedding],
+            n_results=k,
+            include=["documents", "metadatas", "distances", "ids"],
+        )
+
+        documents = self._flatten(results.get("documents"))
+        metadatas = self._flatten(results.get("metadatas"))
+        distances = self._flatten(results.get("distances"))
+        ids = self._flatten(results.get("ids"))
+
+        attributions: List[SourceAttribution] = []
+        for doc, meta, distance, chunk_id in zip(documents, metadatas, distances, ids):
+            if meta is None:
+                meta = {}
+            score = float(distance) if distance is not None else 0.0
+            attributions.append(SourceAttribution(document=doc, metadata=meta, score=score, chunk_id=chunk_id))
+        return attributions
+
+    def _build_context_prompt(self, sources: Iterable[SourceAttribution]) -> str:
+        sections = []
+        for idx, source in enumerate(sources, start=1):
+            header = f"[{idx}] {source.display_label()} — Abstand: {source.score:.4f}"
+            sections.append(f"{header}\n{source.document.strip()}")
+        return "\n\n".join(sections)
+
+    def _build_messages(self, question: str, context: str) -> List[Dict[str, str]]:
+        system_prompt = (
+            "Du bist ein hilfreicher wissenschaftlicher Assistent. Beantworte Fragen "
+            "ausschließlich anhand des bereitgestellten Kontexts. Wenn Informationen "
+            "fehlen, gib dies offen an. Liefere am Ende deiner Antwort eine Liste "
+            "der verwendeten Quellen im Format [Zahl]."
+        )
+
+        messages: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}]
+
+        # incorporate previous turns for conversational memory
+        for turn in self._history[-self._history_limit :]:
+            messages.append({"role": "user", "content": turn.question})
+            messages.append({"role": "assistant", "content": turn.answer})
+
+        user_prompt = (
+            "Kontext:\n"
+            f"{context if context else '---'}\n\n"
+            f"Frage: {question}\n"
+            "Formuliere eine fundierte Antwort in Deutsch."
+        )
+        messages.append({"role": "user", "content": user_prompt})
+        return messages
+
+    def _append_history(self, turn: ConversationTurn) -> None:
+        self._history.append(turn)
+        if len(self._history) > self._history_limit:
+            overflow = len(self._history) - self._history_limit
+            if overflow > 0:
+                del self._history[0:overflow]
+
+    @staticmethod
+    def _flatten(nested: Optional[List[List[Any]]]) -> List[Any]:
+        if not nested:
+            return []
+        return [item for group in nested for item in group]
+
+    @staticmethod
+    def _append_source_section(answer: str, sources: List[SourceAttribution]) -> str:
+        if not sources:
+            return f"{answer}\n\nQuellen: Keine passenden Treffer."
+
+        lines = [f"[{idx}] {source.display_label()}" for idx, source in enumerate(sources, start=1)]
+        joined = "\n".join(lines)
+        return f"{answer}\n\nQuellen:\n{joined}"
+
+    # ------------------------------------------------------------------
+    def _encode_question(self, question: str, cache_key: str) -> List[float]:
+        cached_embedding = self._cache_get(self._embedding_cache, cache_key)
+        if cached_embedding is not None:
+            return cached_embedding
+        embedding = self._embedder.encode([question], convert_to_numpy=True)[0].tolist()
+        self._cache_set(self._embedding_cache, cache_key, embedding)
+        return embedding
+
+    def _get_sources_with_cache(
+        self,
+        question: str,
+        k: int,
+        cache_key: str,
+        embedding: List[float],
+    ) -> List[SourceAttribution]:
+        cached_sources = self._cache_get(self._retrieval_cache, cache_key)
+        if cached_sources is not None:
+            return self._clone_sources(cached_sources)
+        sources = self._retrieve_sources(question, k, embedding=embedding)
+        self._cache_set(self._retrieval_cache, cache_key, [asdict(source) for source in sources])
+        return sources
+
+    def _make_cache_key(self, question: str) -> str:
+        history_snapshot = [
+            {"q": turn.question, "a": turn.answer}
+            for turn in self._history[-self._history_limit :]
+        ]
+        payload = {"question": question.strip(), "history": history_snapshot}
+        return json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+    def _cache_get(self, cache: "OrderedDict[str, Any]", key: str) -> Optional[Any]:
+        value = cache.get(key)
+        if value is not None:
+            cache.move_to_end(key)
+        return value
+
+    def _cache_set(self, cache: "OrderedDict[str, Any]", key: str, value: Any) -> None:
+        if not self._cache_size:
+            return
+        cache[key] = value
+        cache.move_to_end(key)
+        while len(cache) > self._cache_size:
+            cache.popitem(last=False)
+
+    @staticmethod
+    def _clone_sources(stored: List[Dict[str, Any]]) -> List[SourceAttribution]:
+        return [SourceAttribution(**item) for item in stored]
+
+
+@lru_cache(maxsize=4)
+def _load_embedder(model_name: str) -> SentenceTransformer:
+    return SentenceTransformer(model_name)
+
+
+__all__ = [
+    "SimpleRAGSession",
+    "SourceAttribution",
+    "ConversationTurn",
+    "DEFAULT_MODEL",
+    "DEFAULT_EMBEDDING_MODEL",
+]
+

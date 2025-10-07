@@ -10,6 +10,8 @@ Eine modulare Python-Pipeline für PDF-Verarbeitung, Volltextsuche und Dokumente
 - Duplikatserkennung via Hash-Vergleich und Fuzzy-String-Matching
 - CLI-Tools für benutzerfreundliche Bedienung
 - Formel-Extraktion mit Nougat-OCR (optional)
+- Adaptive Chunking & Parallelisierung für große PDF-Batches inklusive JSONL-Slices
+- Wiederverwendbare Embedding- und Antwort-Caches für beschleunigte RAG-Queries
 
 ## Anforderungen & Ziele
 - Lokale Verarbeitung (Textextraktion, OCR, Indexierung) ohne Cloud-Zwang; Datenschutz hat Priorität.
@@ -27,35 +29,46 @@ Eine modulare Python-Pipeline für PDF-Verarbeitung, Volltextsuche und Dokumente
 │   ├── core/         # RAG/Embedding-Funktionen
 │   ├── formulas/     # Nougat & Formel-Index
 │   └── cli/          # Moderne CLI-Einstiegspunkte
+├── config/
+│   └── config.example.json  # Vorlage für Pfade, Modelle, API-Keys
 ├── docs/
 │   ├── architecture/ # Aktuelle Architekturunterlagen
-│   └── archive/      # Historische Notizen/Reports
+│   ├── archive/      # Historische Notizen/Reports
+│   ├── setup/        # Setup- und Konfigurationsanleitungen
+│   └── tutorials/    # Schritt-für-Schritt-Guides
 ├── scripts/
+│   ├── setup.sh      # Bootstrap-Skript für virtuelle Umgebung & Dependencies
 │   └── legacy/       # Ältere Pipeline-/Utility-Skripte
 ├── processed/        # Verarbeitete Daten (ignored)
 ├── raw/              # Eingabe-PDFs (ignored)
 ├── txt/              # Extrahierte Texte (ignored)
 ├── metadata/         # Metadaten, Reports
+├── processed/chunks/ # JSONL-Textsegmente für RAG & Debugging (ignored)
+├── tools/            # Automatisierung & Hilfsskripte
 ├── requirements.txt  # Basis-Abhängigkeiten
-├── requirements-nougat.txt  # Nougat-/Vision-Extras
-└── config.json       # Optionale Legacy-Konfiguration
+└── requirements-nougat.txt  # Nougat-/Vision-Extras
 ```
 ### Weiterführende Dokumente
+- `docs/setup/configuration.md` – Vollständige Dokumentation zur Konfiguration
+- `docs/tutorials/first_pipeline_run.md` – Tutorial für den ersten Pipeline-Lauf
 - `docs/architecture/wissenspipeline-anpassen.md` – Detaillierte Architektur-Notizen (DE)
 - `docs/archive/` – Historische READMEs, Reports und Audits
 
 
 ## Installation & Verwendung
 
-### 1. Abhängigkeiten installieren
+### 1. Umgebung einrichten
 ```sh
-pip install -r requirements.txt
-# Zusätzlich für vollständige Funktionalität:
-pip install sentence-transformers chromadb openai-whisper
-pip install pymupdf whoosh  # Für PDF-Verarbeitung
-   ```
+./scripts/setup.sh              # installiert requirements.txt in .venv
+INSTALL_NOUGAT=1 ./scripts/setup.sh  # optional: Nougat-Extras mitinstallieren
+```
 
-### 2. CLI-Tools verwenden (empfohlen)
+### 2. Konfiguration anpassen
+- Kopiere `config/config.example.json` nach `config/config.json`.
+- Ergänze Pfade, Standardmodelle und API-Schlüssel nach Bedarf.
+- Details siehe `docs/setup/configuration.md`.
+
+### 3. CLI-Tools verwenden (empfohlen)
 
 #### Dokumente analysieren
 ```sh
@@ -72,11 +85,13 @@ python -c "from src.analysis.duplicates import scan_duplicates; scan_duplicates(
 python src/cli/search.py "machine learning"
 
 # Pipeline ausführen (PDF → Text → Index)
-python src/cli/pipeline.py --action extract
-python src/cli/pipeline.py --action index
+python src/cli/pipeline.py extract --batch-size 4
+python src/cli/pipeline.py index --batch-size 200
+# Komplettpipeline inkl. Index und optional Nougat
+python src/cli/pipeline.py full --batch-size 4 --index-batch-size 200
 ```
 
-### 3. Programmatische Verwendung
+### 4. Programmatische Verwendung
 
 #### PDF-Textextraktion
 ```python
@@ -128,7 +143,7 @@ except ImportError:
     print("ChromaDB/sentence-transformers nicht verfügbar")
 ```
 
-### 4. Formelverarbeitung (optional)
+### 5. Formelverarbeitung (optional)
 
 ```python
 from pathlib import Path
@@ -141,35 +156,39 @@ else:
     print(f"Nougat-Fehler: {result.get('error')}")
 ```
 
+```sh
+# Formel-Extraktion und Indexaufbau (setzt Nougat-Markdown voraus)
+python src/cli/pipeline.py formulas
+python src/cli/pipeline.py formula-index
+```
+
+Die Verzeichnisse für Nougat-Markdown (`processed/nougat_md/`), ersetzte Texte (`processed/nougat_txt/`),
+das JSONL mit Formelmetadaten (`metadata/formulas.jsonl`) und die SQLite-Datenbank (`metadata/formula_index.sqlite`)
+können über die Config-Sektion `formulas` angepasst werden.
+
 ## Konfiguration
 
-Bearbeite `config.json` für Anpassungen:
-
-```json
-{
-  "raw_dirs": ["raw/"],
-  "output_dirs": {"txt": "txt/", "processed": "processed/"},
-  "search_index": "processed/whoosh_index/",
-  "similarity_threshold": 80,
-  "max_file_size_mb": 100
-}
-```
+- Vollständige Feldbeschreibung: `docs/setup/configuration.md`
+- Lokale Anpassungen in `config/config.json` oder `.env` vornehmen
+- Sensible Werte (API-Keys) werden von Umgebungsvariablen wie `OPENAI_API_KEY`, `MATHPIX_APP_ID` übersteuert
+- Feinjustierung über neue Felder wie `pipeline.parallelism`, `paths.chunks`, `rag.chunking`,
+  `rag.cache_size`, `rag.chroma_settings` und `rag.collection_metadata`
 
 ## Funktionsübersicht
 
 ### Pipeline-Module (`src/pipeline/`)
-- **extract.py**: PDF→Text-Konvertierung mit PyMuPDF
-- **index.py**: Whoosh-BM25-Indexierung für Volltext-Suche  
+- **extract.py**: PDF→Text-Konvertierung mit PyMuPDF, adaptive Chunking & Parallelverarbeitung
+- **index.py**: Whoosh-BM25-Indexierung für Volltext-Suche
 - **search.py**: Suchfunktionen mit Ranking und Filterung
 
 ### Analyse-Tools (`src/analysis/`)
 - **duplicates.py**: Hash-basierte + Fuzzy-Duplikatserkennung
 - **relevance.py**: Keyword-Extraktion und Relevanz-Scoring
 
-### KI-Integration (`src/core/`) 
+### KI-Integration (`src/core/`)
 - **convert_local.py**: Lokale PDF-Verarbeitung
-- **indexer.py**: ChromaDB-Embedding-Speicher
-- **rag.py**: Retrieval-Augmented Generation
+- **indexer.py**: ChromaDB-Embedding-Speicher mit optimierter Chunk-Metadatenerfassung
+- **rag.py**: Retrieval-Augmented Generation mit Query-/Embedding-Cache
 
 ### Benutzer-Interface (`src/cli/`)
 - **analyze.py**: Ein-Kommando-Analyse (Duplikate + Relevanz)

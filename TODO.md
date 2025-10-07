@@ -30,37 +30,36 @@ python pipeline_cli.py stats
 ### 🟡 **Noch zu implementieren** (Prioritätsliste)
 
 #### **Priority 1: Produktionsreife**
-- [ ] Batch processing für mehrere PDFs
-- [ ] Bessere Metadata-Extraktion (Dateiname, Autor, etc.)
-- [ ] Progress bars für lange Verarbeitungen
-- [ ] Error logging und Recovery
+- [x] Batch processing für mehrere PDFs
+- [x] Bessere Metadata-Extraktion (Dateiname, Autor, etc.)
+- [x] Progress bars für lange Verarbeitungen
+- [x] Error logging und Recovery
 
 #### **Priority 2: RAG & Queries**
-- [ ] Simple RAG ohne LangChain (direkte ChromaDB + OpenAI API)
-- [ ] Conversational interface
-- [ ] Query history und Kontext
-- [ ] Source attribution in Antworten
+- [x] Simple RAG ohne LangChain (direkte ChromaDB + OpenAI API)
+- [x] Conversational interface
+- [x] Query history und Kontext
+- [x] Source attribution in Antworten
 
 #### **Priority 3: Configuration & Setup**
-- [ ] `config.json` für Models, Pfade, API keys
-- [ ] Setup script für Dependencies
-- [ ] Docker containerization
-- [ ] Dokumentation und Tutorials
+- [x] `config.json` für Models, Pfade, API keys
+- [x] Setup script für Dependencies
+- [x] Dokumentation und Tutorials
 
 ### 🟢 **Future Enhancements**
 
 #### **Advanced Features**
 - [ ] Web interface (Streamlit/FastAPI)
-- [ ] Formula extraction und LaTeX indexing
+- [x] Formula extraction und LaTeX indexing
 - [ ] Multi-language PDF support
 - [ ] PDF preview integration
 - [ ] Export zu verschiedenen Formaten
 
 #### **Performance & Scale**
-- [ ] Chunking strategy für sehr große PDFs
-- [ ] Parallel processing
-- [ ] Vector database optimization
-- [ ] Caching layer für wiederholte Queries
+- [x] Chunking strategy für sehr große PDFs
+- [x] Parallel processing
+- [x] Vector database optimization
+- [x] Caching layer für wiederholte Queries
 
 ### � **Aktuelle Performance**
 - **PDF Processing**: ~4s für wissenschaftliche Papers (Nougat)
