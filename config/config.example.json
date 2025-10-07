@@ -1,0 +1,41 @@
+{
+  "paths": {
+    "raw": "raw",
+    "text": "txt",
+    "processed": "processed",
+    "metadata": "metadata",
+    "logs": "logs",
+    "chroma": ".chroma",
+    "whoosh_index": "processed/whoosh_index"
+  },
+  "models": {
+    "chat": "gpt-4o-mini",
+    "embedding": "all-MiniLM-L6-v2",
+    "nougat": "facebook/nougat-base"
+  },
+  "services": {
+    "openai": {
+      "api_key": ""
+    },
+    "mathpix": {
+      "app_id": "",
+      "app_key": ""
+    },
+    "zotero": {
+      "user_id": "",
+      "api_key": ""
+    }
+  },
+  "pipeline": {
+    "default_batch_size": 8,
+    "default_index_batch_size": 200,
+    "overwrite_outputs": false
+  },
+  "rag": {
+    "collection": "papers",
+    "persist_path": ".chroma",
+    "history_limit": 10,
+    "temperature": 0.0,
+    "results_per_query": 5
+  }
+}

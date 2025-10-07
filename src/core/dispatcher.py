@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from enum import Enum
 
 # Local imports
+from ..config import CFG
+
 try:
     from .zotero_client import ZoteroClient, create_zotero_client
     from ..pipeline.extract import extract_pdf  # This is the correct function name
@@ -133,8 +135,8 @@ class PDFDispatcher:
     
     def _check_mathpix_available(self) -> bool:
         """Check if Mathpix API is configured."""
-        import os
-        return bool(os.getenv('MATHPIX_API_KEY'))
+        mathpix_cfg = CFG.get("services", {}).get("mathpix", {})
+        return bool(mathpix_cfg.get("app_key"))
     
     def analyze_document(self, pdf_path: Path, zotero_item_key: Optional[str] = None) -> DocumentRoute:
         """
