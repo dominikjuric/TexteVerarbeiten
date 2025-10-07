@@ -40,11 +40,13 @@ python src/cli/pipeline.py full --batch-size 4 --index-batch-size 100
 ```
 
 Die CLI zeigt nach jedem Schritt eine Zusammenfassung inklusive Fehlern und Metadatenwarnungen.
+Wenn Nougat aktiviert ist, folgen automatisch Formel-Extraktion und LaTeX-Indexaufbau.
 
 ## Schritt 5 – Ergebnisse prüfen
 - Extrahierte Texte findest du unter `txt/` (oder deinem konfigurierten Pfad).
 - Der Whoosh-Index landet im Verzeichnis `processed/whoosh_index/`.
-- Wenn du Nougat aktiviert hast, liegen Markdown-Ausgaben unter `txt_nougat/`.
+- Wenn du Nougat aktiviert hast, liegen Nougat-Markdowns unter `processed/nougat_md/`,
+  ersetzte Texte in `processed/nougat_txt/` und der Formel-Index in `metadata/formula_index.sqlite`.
 
 ## Schritt 6 – RAG-Abfrage starten (optional)
 ```bash

@@ -39,6 +39,28 @@ def _print_summary(title: str, result: Dict[str, object]) -> None:
         else:
             print(f"  - {errors}")
 
+    if "total_formulas" in result:
+        print(f"Formeln: {result.get('total_formulas')}")
+        with_formulas = result.get("documents_with_formulas")
+        without_formulas = result.get("documents_without_formulas")
+        if with_formulas is not None or without_formulas is not None:
+            print(
+                "Dokumente mit/ohne Formeln: "
+                f"{with_formulas or 0}/{without_formulas or 0}"
+            )
+        output_file = result.get("output_file")
+        if output_file:
+            print(f"Metadaten: {output_file}")
+        text_dir = result.get("text_dir")
+        if text_dir:
+            print(f"Texte ohne LaTeX: {text_dir}")
+
+    if "token_mappings" in result:
+        print(f"Token-Zuordnungen: {result.get('token_mappings')}")
+        db_path = result.get("db_path")
+        if db_path:
+            print(f"Index: {db_path}")
+
 
 def main() -> None:
     """Main CLI entry point for pipeline management."""
@@ -98,11 +120,12 @@ def main() -> None:
             print(f"Nougat completed: {nougat_result['success']}/{nougat_result['total']} successful")
 
             print("\n4. Extracting formulas...")
-            formula_result = extract_all_formulas()
-            print(f"Extracted {formula_result['total_formulas']} formulas")
+            formula_result = extract_all_formulas(show_progress=not args.no_progress)
+            _print_summary("Formel-Extraktion", formula_result)
 
             print("\n5. Building formula index...")
-            create_formula_index()
+            formula_index = create_formula_index()
+            _print_summary("Formel-Index", formula_index)
         else:
             print("Skipping Nougat OCR processing")
 
@@ -128,11 +151,12 @@ def main() -> None:
         print(f"Nougat completed: {result['success']}/{result['total']} successful")
 
     elif args.command == "formulas":
-        result = extract_all_formulas()
-        print(f"Extracted {result['total_formulas']} formulas")
+        result = extract_all_formulas(show_progress=not args.no_progress)
+        _print_summary("Formel-Extraktion", result)
 
     elif args.command == "formula-index":
-        create_formula_index()
+        result = create_formula_index()
+        _print_summary("Formel-Index", result)
 
     else:
         parser.print_help()

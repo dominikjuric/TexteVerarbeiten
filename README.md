@@ -153,6 +153,16 @@ else:
     print(f"Nougat-Fehler: {result.get('error')}")
 ```
 
+```sh
+# Formel-Extraktion und Indexaufbau (setzt Nougat-Markdown voraus)
+python src/cli/pipeline.py formulas
+python src/cli/pipeline.py formula-index
+```
+
+Die Verzeichnisse für Nougat-Markdown (`processed/nougat_md/`), ersetzte Texte (`processed/nougat_txt/`),
+das JSONL mit Formelmetadaten (`metadata/formulas.jsonl`) und die SQLite-Datenbank (`metadata/formula_index.sqlite`)
+können über die Config-Sektion `formulas` angepasst werden.
+
 ## Konfiguration
 
 - Vollständige Feldbeschreibung: `docs/setup/configuration.md`

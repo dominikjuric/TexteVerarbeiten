@@ -44,6 +44,12 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "temperature": 0.0,
         "results_per_query": 5,
     },
+    "formulas": {
+        "markdown_dir": "processed/nougat_md",
+        "text_dir": "processed/nougat_txt",
+        "metadata_file": "metadata/formulas.jsonl",
+        "index_db": "metadata/formula_index.sqlite",
+    },
 }
 
 ENVIRONMENT_OVERRIDES: Mapping[tuple[str, ...], str] = {

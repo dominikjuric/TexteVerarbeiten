@@ -50,7 +50,7 @@ python pipeline_cli.py stats
 
 #### **Advanced Features**
 - [ ] Web interface (Streamlit/FastAPI)
-- [ ] Formula extraction und LaTeX indexing
+- [x] Formula extraction und LaTeX indexing
 - [ ] Multi-language PDF support
 - [ ] PDF preview integration
 - [ ] Export zu verschiedenen Formaten

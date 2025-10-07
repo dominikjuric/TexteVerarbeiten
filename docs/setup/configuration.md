@@ -53,6 +53,12 @@ Dieses Dokument erklärt, wie die Pipeline über JSON-Dateien und Umgebungsvaria
     "history_limit": 10,
     "temperature": 0.0,
     "results_per_query": 5
+  },
+  "formulas": {
+    "markdown_dir": "processed/nougat_md",
+    "text_dir": "processed/nougat_txt",
+    "metadata_file": "metadata/formulas.jsonl",
+    "index_db": "metadata/formula_index.sqlite"
   }
 }
 ```
@@ -63,6 +69,7 @@ Dieses Dokument erklärt, wie die Pipeline über JSON-Dateien und Umgebungsvaria
 - **services** – Zugangsdaten für externe APIs. Leere Strings können durch `.env`-Variablen überschrieben werden.
 - **pipeline** – Defaults für Batchgrößen und Überschreibungsstrategie in der CLI.
 - **rag** – Standardparameter für Retrieval-Augmented-Generation.
+- **formulas** – Pfade für Nougat-Markdown, ersetzte Textausgaben, JSONL-Metadaten und die SQLite-Indexdatei.
 
 ## 3. Lade-Reihenfolge
 
