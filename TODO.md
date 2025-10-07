@@ -36,10 +36,10 @@ python pipeline_cli.py stats
 - [x] Error logging und Recovery
 
 #### **Priority 2: RAG & Queries**
-- [ ] Simple RAG ohne LangChain (direkte ChromaDB + OpenAI API)
-- [ ] Conversational interface
-- [ ] Query history und Kontext
-- [ ] Source attribution in Antworten
+- [x] Simple RAG ohne LangChain (direkte ChromaDB + OpenAI API)
+- [x] Conversational interface
+- [x] Query history und Kontext
+- [x] Source attribution in Antworten
 
 #### **Priority 3: Configuration & Setup**
 - [ ] `config.json` für Models, Pfade, API keys
