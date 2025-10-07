@@ -1,0 +1,12 @@
+pymupdf>=1.24
+pytesseract>=0.3
+Pillow>=10
+python-dotenv>=1.0
+sentence-transformers>=2.2,<3
+chromadb>=0.4
+langchain-core>=0.2
+langchain-openai>=0.1
+pyzotero>=1.5
+whoosh>=2.7
+rapidfuzz>=3.0
+pdfminer.six>=20221105

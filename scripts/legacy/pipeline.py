@@ -1,25 +1,34 @@
+#!/usr/bin/env python3
+"""Main pipeline script using the restructured modular architecture."""
+
 import os
 import json
-import hashlib
+import argparse
 from pathlib import Path
-from typing import List, Dict
-import subprocess
-import uuid
 
-# Placeholder imports – implement konkret
-# from unstructured.partition.pdf import partition_pdf
-# from qdrant_client import QdrantClient
-# from sentence_transformers import SentenceTransformer
+from src.pipeline.extract import extract_all_pdfs
+from src.pipeline.index import build_whoosh_index
+from src.formulas.nougat import process_nougat_batch
+from src.formulas.extract import extract_all_formulas
+from src.formulas.index import create_formula_index
+from src.analysis.duplicates import scan_duplicates
+from src.analysis.relevance import generate_relevance_report
 
-CONFIG_PATH = "config.json"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+CONFIG_PATH = PROJECT_ROOT / "config.json"
 
 def load_config():
-    with open(CONFIG_PATH) as f:
-        return json.load(f)
+    """Load configuration from config.json."""
+    if CONFIG_PATH.exists():
+        with CONFIG_PATH.open() as f:
+            return json.load(f)
+    return {}
 
 def ensure_dirs(cfg):
-    for d in cfg["directories"].values():
-        Path(d).mkdir(parents=True, exist_ok=True)
+    """Ensure required directories exist."""
+    if "directories" in cfg:
+        for d in cfg["directories"].values():
+            Path(d).mkdir(parents=True, exist_ok=True)
 
 def ocr_pdf(input_path: Path, output_path: Path):
     if output_path.exists():
@@ -37,7 +46,7 @@ def ocr_pdf(input_path: Path, output_path: Path):
 def hash_text(text: str) -> str:
     return hashlib.md5(text.encode("utf-8")).hexdigest()[:12]
 
-def parse_pdf(path: Path) -> List[Dict]:
+def parse_pdf(path: Path) -> list:
     # blocks = partition_pdf(filename=str(path))  # uncomment real call
     # Fake structure for skeleton
     return [

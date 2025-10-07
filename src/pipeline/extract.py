@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
+"""Text extraction pipeline module."""
+
 import os
+import sys
 from pathlib import Path
 from typing import Iterator
 
-from src.convert_local import extract_text_pymupdf
+# Add parent directory to path for imports
+sys.path.append(str(Path(__file__).parent.parent))
+
+from core.convert_local import extract_text_pymupdf
 
 RAW_DIRS_ENV = os.getenv("RAW_DIRS")
 if RAW_DIRS_ENV:
@@ -16,6 +22,7 @@ OUT_DIR.mkdir(exist_ok=True, parents=True)
 
 
 def iter_pdfs() -> Iterator[Path]:
+    """Iterate over all PDF files in the raw directories."""
     for base in RAW_DIRS:
         if not base.exists():
             continue
@@ -25,6 +32,19 @@ def iter_pdfs() -> Iterator[Path]:
 
 
 def extract_pdf(pdf_path: Path) -> str:
+    """
+    Extract text from a PDF file using PyMuPDF.
+    
+    Args:
+        pdf_path: Path to the PDF file to extract text from
+        
+    Returns:
+        Extracted text content as string, or error message if extraction fails
+        
+    Note:
+        Uses PyMuPDF for text extraction. Returns empty string if no text found,
+        or error message prefixed with "[ERROR]" if extraction fails.
+    """
     try:
         text = extract_text_pymupdf(str(pdf_path))
         return text if text.strip() else ""
@@ -32,7 +52,18 @@ def extract_pdf(pdf_path: Path) -> str:
         return f"[ERROR] {exc}"
 
 
-def main():
+def extract_all_pdfs():
+    """
+    Extract text from all PDFs in configured directories and save to text files.
+    
+    Processes all PDF files found in RAW_DIRS (configured directories) and saves
+    the extracted text content to corresponding .txt files in the output directory.
+    Creates output directory if it doesn't exist.
+    
+    Note:
+        Output files are named as {pdf_name}.txt and saved to the configured
+        text output directory. Prints progress information during processing.
+    """
     pdfs = list(iter_pdfs())
     if not pdfs:
         print("Keine PDFs gefunden. Setze RAW_DIRS oder lege Dateien unter 'raw/' ab.")
@@ -47,7 +78,3 @@ def main():
             continue
         out.write_text(content, encoding="utf-8")
     print(f"Fertig. Ausgabe in {OUT_DIR}/")
-
-
-if __name__ == "__main__":
-    main()

@@ -69,3 +69,5 @@ logs/
 .cache/
 cache/
 
+# Analyse-Reports
+repo_audit.txt
