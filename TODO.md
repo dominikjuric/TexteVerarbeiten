@@ -42,10 +42,9 @@ python pipeline_cli.py stats
 - [x] Source attribution in Antworten
 
 #### **Priority 3: Configuration & Setup**
-- [ ] `config.json` für Models, Pfade, API keys
-- [ ] Setup script für Dependencies
-- [ ] Docker containerization
-- [ ] Dokumentation und Tutorials
+- [x] `config.json` für Models, Pfade, API keys
+- [x] Setup script für Dependencies
+- [x] Dokumentation und Tutorials
 
 ### 🟢 **Future Enhancements**
 

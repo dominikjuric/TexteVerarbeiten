@@ -8,8 +8,9 @@ from src.dispatcher import process_pdf
 from src.indexer import purge_by_source
 
 def get_zot():
-    api_key = CFG.get("ZOTERO_API_KEY")
-    user_id = CFG.get("ZOTERO_USER_ID")
+    zotero_cfg = CFG.get("services", {}).get("zotero", {})
+    api_key = zotero_cfg.get("api_key")
+    user_id = zotero_cfg.get("user_id")
     lib_type = os.getenv("ZOTERO_LIBRARY_TYPE", "user")
     group_id = os.getenv("ZOTERO_GROUP_ID")
     if lib_type == "group":

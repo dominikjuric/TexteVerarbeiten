@@ -19,8 +19,18 @@ from sentence_transformers import SentenceTransformer
 from src.config import CFG
 
 
-DEFAULT_MODEL = "gpt-4o-mini"
-DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+DEFAULT_MODEL = CFG.get("models", {}).get("chat", "gpt-4o-mini")
+DEFAULT_EMBEDDING_MODEL = CFG.get("models", {}).get("embedding", "all-MiniLM-L6-v2")
+DEFAULT_COLLECTION = CFG.get("rag", {}).get("collection", "papers")
+DEFAULT_PERSIST_PATH = (
+    CFG.get("rag", {}).get("persist_path")
+    or CFG.get("paths", {}).get("chroma")
+    or ".chroma"
+)
+DEFAULT_HISTORY_LIMIT = int(CFG.get("rag", {}).get("history_limit", 10))
+DEFAULT_TEMPERATURE = float(CFG.get("rag", {}).get("temperature", 0.0))
+DEFAULT_RESULTS_PER_QUERY = int(CFG.get("rag", {}).get("results_per_query", 5))
+
 
 
 @dataclass
@@ -92,7 +102,7 @@ class SimpleRAGSession:
 
         return self._chat_model
 
-    def ask(self, question: str, *, k: int = 5) -> Dict[str, Any]:
+    def ask(self, question: str, *, k: Optional[int] = None) -> Dict[str, Any]:
         """Answer a question using retrieved context and conversation history.
 
         Returns a dictionary containing the generated answer, the retrieved
@@ -102,6 +112,8 @@ class SimpleRAGSession:
         if not question.strip():
             raise ValueError("Die Frage darf nicht leer sein.")
 
+        if k is None:
+            k = DEFAULT_RESULTS_PER_QUERY
         sources = self._retrieve_sources(question, k)
         context = self._build_context_prompt(sources)
         messages = self._build_messages(question, context)
