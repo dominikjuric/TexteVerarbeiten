@@ -30,10 +30,10 @@ python pipeline_cli.py stats
 ### 🟡 **Noch zu implementieren** (Prioritätsliste)
 
 #### **Priority 1: Produktionsreife**
-- [ ] Batch processing für mehrere PDFs
-- [ ] Bessere Metadata-Extraktion (Dateiname, Autor, etc.)
-- [ ] Progress bars für lange Verarbeitungen
-- [ ] Error logging und Recovery
+- [x] Batch processing für mehrere PDFs
+- [x] Bessere Metadata-Extraktion (Dateiname, Autor, etc.)
+- [x] Progress bars für lange Verarbeitungen
+- [x] Error logging und Recovery
 
 #### **Priority 2: RAG & Queries**
 - [ ] Simple RAG ohne LangChain (direkte ChromaDB + OpenAI API)
