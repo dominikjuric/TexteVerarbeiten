@@ -10,6 +10,8 @@ Eine modulare Python-Pipeline für PDF-Verarbeitung, Volltextsuche und Dokumente
 - Duplikatserkennung via Hash-Vergleich und Fuzzy-String-Matching
 - CLI-Tools für benutzerfreundliche Bedienung
 - Formel-Extraktion mit Nougat-OCR (optional)
+- Adaptive Chunking & Parallelisierung für große PDF-Batches inklusive JSONL-Slices
+- Wiederverwendbare Embedding- und Antwort-Caches für beschleunigte RAG-Queries
 
 ## Anforderungen & Ziele
 - Lokale Verarbeitung (Textextraktion, OCR, Indexierung) ohne Cloud-Zwang; Datenschutz hat Priorität.
@@ -41,6 +43,7 @@ Eine modulare Python-Pipeline für PDF-Verarbeitung, Volltextsuche und Dokumente
 ├── raw/              # Eingabe-PDFs (ignored)
 ├── txt/              # Extrahierte Texte (ignored)
 ├── metadata/         # Metadaten, Reports
+├── processed/chunks/ # JSONL-Textsegmente für RAG & Debugging (ignored)
 ├── tools/            # Automatisierung & Hilfsskripte
 ├── requirements.txt  # Basis-Abhängigkeiten
 └── requirements-nougat.txt  # Nougat-/Vision-Extras
@@ -168,22 +171,24 @@ können über die Config-Sektion `formulas` angepasst werden.
 - Vollständige Feldbeschreibung: `docs/setup/configuration.md`
 - Lokale Anpassungen in `config/config.json` oder `.env` vornehmen
 - Sensible Werte (API-Keys) werden von Umgebungsvariablen wie `OPENAI_API_KEY`, `MATHPIX_APP_ID` übersteuert
+- Feinjustierung über neue Felder wie `pipeline.parallelism`, `paths.chunks`, `rag.chunking`,
+  `rag.cache_size`, `rag.chroma_settings` und `rag.collection_metadata`
 
 ## Funktionsübersicht
 
 ### Pipeline-Module (`src/pipeline/`)
-- **extract.py**: PDF→Text-Konvertierung mit PyMuPDF
-- **index.py**: Whoosh-BM25-Indexierung für Volltext-Suche  
+- **extract.py**: PDF→Text-Konvertierung mit PyMuPDF, adaptive Chunking & Parallelverarbeitung
+- **index.py**: Whoosh-BM25-Indexierung für Volltext-Suche
 - **search.py**: Suchfunktionen mit Ranking und Filterung
 
 ### Analyse-Tools (`src/analysis/`)
 - **duplicates.py**: Hash-basierte + Fuzzy-Duplikatserkennung
 - **relevance.py**: Keyword-Extraktion und Relevanz-Scoring
 
-### KI-Integration (`src/core/`) 
+### KI-Integration (`src/core/`)
 - **convert_local.py**: Lokale PDF-Verarbeitung
-- **indexer.py**: ChromaDB-Embedding-Speicher
-- **rag.py**: Retrieval-Augmented Generation
+- **indexer.py**: ChromaDB-Embedding-Speicher mit optimierter Chunk-Metadatenerfassung
+- **rag.py**: Retrieval-Augmented Generation mit Query-/Embedding-Cache
 
 ### Benutzer-Interface (`src/cli/`)
 - **analyze.py**: Ein-Kommando-Analyse (Duplikate + Relevanz)

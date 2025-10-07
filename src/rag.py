@@ -9,14 +9,17 @@ their UI.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections import OrderedDict
+from dataclasses import asdict, dataclass, field
+from functools import lru_cache
+import json
 from typing import Any, Dict, Iterable, List, Optional
 
-import chromadb
 from openai import OpenAI
 from sentence_transformers import SentenceTransformer
 
 from src.config import CFG
+from .vector_store import get_collection
 
 
 DEFAULT_MODEL = CFG.get("models", {}).get("chat", "gpt-4o-mini")
@@ -30,6 +33,7 @@ DEFAULT_PERSIST_PATH = (
 DEFAULT_HISTORY_LIMIT = int(CFG.get("rag", {}).get("history_limit", 10))
 DEFAULT_TEMPERATURE = float(CFG.get("rag", {}).get("temperature", 0.0))
 DEFAULT_RESULTS_PER_QUERY = int(CFG.get("rag", {}).get("results_per_query", 5))
+DEFAULT_CACHE_SIZE = int(CFG.get("rag", {}).get("cache_size", 64))
 
 
 @dataclass
@@ -85,12 +89,17 @@ class SimpleRAGSession:
         if embedding_model is None:
             embedding_model = DEFAULT_EMBEDDING_MODEL
 
-        self._embedder = SentenceTransformer(embedding_model)
-        self._collection = (
-            chromadb.PersistentClient(path=persist_path).get_or_create_collection(collection_name)
-        )
+        self._embedder = _load_embedder(embedding_model)
+        try:
+            self._collection = get_collection(collection_name, persist_path=persist_path)
+        except ImportError as exc:  # pragma: no cover - configuration error
+            raise RuntimeError("ChromaDB ist nicht verfügbar. Installiere chromadb für RAG-Funktionen.") from exc
 
         self._history: List[ConversationTurn] = []
+        self._cache_size = max(0, DEFAULT_CACHE_SIZE)
+        self._embedding_cache: "OrderedDict[str, List[float]]" = OrderedDict()
+        self._retrieval_cache: "OrderedDict[str, List[Dict[str, Any]]]" = OrderedDict()
+        self._answer_cache: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
 
     # ------------------------------------------------------------------
     # Public API
@@ -113,7 +122,22 @@ class SimpleRAGSession:
 
         if k is None:
             k = DEFAULT_RESULTS_PER_QUERY
-        sources = self._retrieve_sources(question, k)
+        cache_key = self._make_cache_key(question)
+
+        cached_answer = self._cache_get(self._answer_cache, cache_key)
+        if cached_answer:
+            sources = self._clone_sources(cached_answer["sources"])
+            answer_with_sources = cached_answer["answer"]
+            turn = ConversationTurn(question=question, answer=answer_with_sources, sources=sources)
+            self._append_history(turn)
+            return {
+                "answer": answer_with_sources,
+                "sources": sources,
+                "history": list(self._history),
+            }
+
+        embedding = self._encode_question(question, cache_key)
+        sources = self._get_sources_with_cache(question, k, cache_key, embedding)
         context = self._build_context_prompt(sources)
         messages = self._build_messages(question, context)
 
@@ -124,6 +148,12 @@ class SimpleRAGSession:
         )
         answer = response.choices[0].message.content.strip()
         answer_with_sources = self._append_source_section(answer, sources)
+
+        self._cache_set(
+            self._answer_cache,
+            cache_key,
+            {"answer": answer_with_sources, "sources": [asdict(source) for source in sources]},
+        )
 
         turn = ConversationTurn(question=question, answer=answer_with_sources, sources=sources)
         self._append_history(turn)
@@ -147,8 +177,15 @@ class SimpleRAGSession:
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
-    def _retrieve_sources(self, question: str, k: int) -> List[SourceAttribution]:
-        embedding = self._embedder.encode([question], convert_to_numpy=True)[0].tolist()
+    def _retrieve_sources(
+        self,
+        question: str,
+        k: int,
+        *,
+        embedding: Optional[List[float]] = None,
+    ) -> List[SourceAttribution]:
+        if embedding is None:
+            embedding = self._embedder.encode([question], convert_to_numpy=True)[0].tolist()
 
         results = self._collection.query(
             query_embeddings=[embedding],
@@ -221,6 +258,60 @@ class SimpleRAGSession:
         lines = [f"[{idx}] {source.display_label()}" for idx, source in enumerate(sources, start=1)]
         joined = "\n".join(lines)
         return f"{answer}\n\nQuellen:\n{joined}"
+
+    # ------------------------------------------------------------------
+    def _encode_question(self, question: str, cache_key: str) -> List[float]:
+        cached_embedding = self._cache_get(self._embedding_cache, cache_key)
+        if cached_embedding is not None:
+            return cached_embedding
+        embedding = self._embedder.encode([question], convert_to_numpy=True)[0].tolist()
+        self._cache_set(self._embedding_cache, cache_key, embedding)
+        return embedding
+
+    def _get_sources_with_cache(
+        self,
+        question: str,
+        k: int,
+        cache_key: str,
+        embedding: List[float],
+    ) -> List[SourceAttribution]:
+        cached_sources = self._cache_get(self._retrieval_cache, cache_key)
+        if cached_sources is not None:
+            return self._clone_sources(cached_sources)
+        sources = self._retrieve_sources(question, k, embedding=embedding)
+        self._cache_set(self._retrieval_cache, cache_key, [asdict(source) for source in sources])
+        return sources
+
+    def _make_cache_key(self, question: str) -> str:
+        history_snapshot = [
+            {"q": turn.question, "a": turn.answer}
+            for turn in self._history[-self._history_limit :]
+        ]
+        payload = {"question": question.strip(), "history": history_snapshot}
+        return json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+    def _cache_get(self, cache: "OrderedDict[str, Any]", key: str) -> Optional[Any]:
+        value = cache.get(key)
+        if value is not None:
+            cache.move_to_end(key)
+        return value
+
+    def _cache_set(self, cache: "OrderedDict[str, Any]", key: str, value: Any) -> None:
+        if not self._cache_size:
+            return
+        cache[key] = value
+        cache.move_to_end(key)
+        while len(cache) > self._cache_size:
+            cache.popitem(last=False)
+
+    @staticmethod
+    def _clone_sources(stored: List[Dict[str, Any]]) -> List[SourceAttribution]:
+        return [SourceAttribution(**item) for item in stored]
+
+
+@lru_cache(maxsize=4)
+def _load_embedder(model_name: str) -> SentenceTransformer:
+    return SentenceTransformer(model_name)
 
 
 __all__ = [

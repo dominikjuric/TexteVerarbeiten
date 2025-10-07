@@ -45,8 +45,10 @@ Wenn Nougat aktiviert ist, folgen automatisch Formel-Extraktion und LaTeX-Indexa
 ## Schritt 5 – Ergebnisse prüfen
 - Extrahierte Texte findest du unter `txt/` (oder deinem konfigurierten Pfad).
 - Der Whoosh-Index landet im Verzeichnis `processed/whoosh_index/`.
+- Die erzeugten Chunk-JSONLs liegen unter `processed/chunks/` und enthalten pro PDF alle Textsegmente.
 - Wenn du Nougat aktiviert hast, liegen Nougat-Markdowns unter `processed/nougat_md/`,
   ersetzte Texte in `processed/nougat_txt/` und der Formel-Index in `metadata/formula_index.sqlite`.
+- In den Metadaten (`metadata/*.json`) findest du zusätzlich eine `chunks`-Sektion mit Statistik (Anzahl, Strategie, Größe).
 
 ## Schritt 6 – RAG-Abfrage starten (optional)
 ```bash

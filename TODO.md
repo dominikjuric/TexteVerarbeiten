@@ -56,10 +56,10 @@ python pipeline_cli.py stats
 - [ ] Export zu verschiedenen Formaten
 
 #### **Performance & Scale**
-- [ ] Chunking strategy für sehr große PDFs
-- [ ] Parallel processing
-- [ ] Vector database optimization
-- [ ] Caching layer für wiederholte Queries
+- [x] Chunking strategy für sehr große PDFs
+- [x] Parallel processing
+- [x] Vector database optimization
+- [x] Caching layer für wiederholte Queries
 
 ### � **Aktuelle Performance**
 - **PDF Processing**: ~4s für wissenschaftliche Papers (Nougat)

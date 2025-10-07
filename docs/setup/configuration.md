@@ -22,7 +22,8 @@ Dieses Dokument erklärt, wie die Pipeline über JSON-Dateien und Umgebungsvaria
     "metadata": "metadata",
     "logs": "logs",
     "chroma": ".chroma",
-    "whoosh_index": "processed/whoosh_index"
+    "whoosh_index": "processed/whoosh_index",
+    "chunks": "processed/chunks"
   },
   "models": {
     "chat": "gpt-4o-mini",
@@ -45,14 +46,32 @@ Dieses Dokument erklärt, wie die Pipeline über JSON-Dateien und Umgebungsvaria
   "pipeline": {
     "default_batch_size": 8,
     "default_index_batch_size": 200,
-    "overwrite_outputs": false
+    "overwrite_outputs": false,
+    "parallelism": 0
   },
   "rag": {
     "collection": "papers",
     "persist_path": ".chroma",
     "history_limit": 10,
     "temperature": 0.0,
-    "results_per_query": 5
+    "results_per_query": 5,
+    "cache_size": 64,
+    "chunking": {
+      "size": 1200,
+      "overlap": 200,
+      "max_size": 2400,
+      "large_document_threshold": 60000,
+      "target_chunk_count": 256,
+      "min_size": 400
+    },
+    "chroma_settings": {
+      "chroma_db_impl": "duckdb+parquet",
+      "anonymized_telemetry": false,
+      "allow_reset": false
+    },
+    "collection_metadata": {
+      "hnsw:space": "cosine"
+    }
   },
   "formulas": {
     "markdown_dir": "processed/nougat_md",
@@ -67,9 +86,17 @@ Dieses Dokument erklärt, wie die Pipeline über JSON-Dateien und Umgebungsvaria
 - **paths** – Standardverzeichnisse für Eingaben, Ausgaben, Logs und Vektordatenbanken.
 - **models** – Voreingestellte Modellnamen für Chat, Embeddings und Nougat.
 - **services** – Zugangsdaten für externe APIs. Leere Strings können durch `.env`-Variablen überschrieben werden.
-- **pipeline** – Defaults für Batchgrößen und Überschreibungsstrategie in der CLI.
-- **rag** – Standardparameter für Retrieval-Augmented-Generation.
+- **pipeline** – Defaults für Batchgrößen, Überschreibungsstrategie und optionale Parallelisierung.
+- **rag** – Standardparameter für Retrieval-Augmented-Generation inkl. Chunking-, Cache- und Chroma-Tuning.
 - **formulas** – Pfade für Nougat-Markdown, ersetzte Textausgaben, JSONL-Metadaten und die SQLite-Indexdatei.
+
+### Erweiterte Optionen
+
+- `paths.chunks` – Zielordner für die generierten Chunk-JSONL-Dateien.
+- `pipeline.parallelism` – Anzahl gleichzeitiger Extraktions-Worker (0 = automatisch deaktiviert).
+- `rag.chunking` – Feintuning der adaptiven Chunk-Größe (Zeichen, Overlap, Schwellenwerte).
+- `rag.cache_size` – Anzahl der gespeicherten Fragen/Antworten und Embeddings für wiederholte Queries.
+- `rag.chroma_settings` & `rag.collection_metadata` – Optimierungsparameter für den PersistentClient bzw. den HNSW-Index.
 
 ## 3. Lade-Reihenfolge
 

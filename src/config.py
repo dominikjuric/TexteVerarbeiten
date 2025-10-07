@@ -21,6 +21,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "logs": "logs",
         "chroma": ".chroma",
         "whoosh_index": "processed/whoosh_index",
+        "chunks": "processed/chunks",
     },
     "models": {
         "chat": "gpt-4o-mini",
@@ -36,6 +37,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "default_batch_size": 8,
         "default_index_batch_size": 200,
         "overwrite_outputs": False,
+        "parallelism": 0,
     },
     "rag": {
         "collection": "papers",
@@ -43,6 +45,23 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "history_limit": 10,
         "temperature": 0.0,
         "results_per_query": 5,
+        "cache_size": 64,
+        "chunking": {
+            "size": 1200,
+            "overlap": 200,
+            "max_size": 2400,
+            "large_document_threshold": 60_000,
+            "target_chunk_count": 256,
+            "min_size": 400,
+        },
+        "chroma_settings": {
+            "chroma_db_impl": "duckdb+parquet",
+            "anonymized_telemetry": False,
+            "allow_reset": False,
+        },
+        "collection_metadata": {
+            "hnsw:space": "cosine",
+        },
     },
     "formulas": {
         "markdown_dir": "processed/nougat_md",
