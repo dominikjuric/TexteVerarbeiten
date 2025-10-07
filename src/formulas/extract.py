@@ -1,107 +1,240 @@
 #!/usr/bin/env python3
-"""Formula extraction from Nougat markdown files."""
+"""Utilities for extracting LaTeX formulas from Nougat markdown outputs."""
 
-import re
-import json
+from __future__ import annotations
+
 import hashlib
+import json
+import re
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterable, Iterator, List, Match, Tuple
 
-MD_DIR = Path("processed/nougat_md")
-OUT_TEXT_DIR = Path("txt_nougat")
-OUT_TEXT_DIR.mkdir(parents=True, exist_ok=True)
-FORMULA_JSONL = Path("metadata/formulas.jsonl")
-FORMULA_JSONL.parent.mkdir(parents=True, exist_ok=True)
+from tqdm import tqdm
 
-FORMULA_BLOCK = re.compile(r'\$\$(.+?)\$\$', re.DOTALL)
-FORMULA_INLINE = re.compile(r'(?<!\$)\$(.+?)\$(?!\$)')
+from src.config import CFG
+from src.pipeline.logging_utils import get_pipeline_logger, setup_pipeline_logging
 
 
-def norm_formula(f: str) -> str:
-    """Normalize formula by trimming and removing extra spaces."""
-    return re.sub(r'\s+', ' ', f.strip())
+FORMULA_BLOCK = re.compile(r"\$\$(.+?)\$\$", re.DOTALL)
+FORMULA_INLINE = re.compile(r"(?<!\$)\$(.+?)\$(?!\$)")
+
+_ROOT = Path(__file__).resolve().parents[2]
+logger = get_pipeline_logger("formulas.extract")
 
 
-def hash_formula(f: str) -> str:
-    """Generate a short hash for a formula."""
-    return hashlib.md5(f.encode('utf-8')).hexdigest()[:12]
+@dataclass(frozen=True)
+class ExtractionPaths:
+    """Resolved directories/files used for formula processing."""
+
+    markdown_dir: Path
+    text_dir: Path
+    metadata_file: Path
 
 
-def extract_formulas_from_md(md_path: Path) -> tuple[str, list[dict]]:
-    """Extract formulas from markdown file and return processed text."""
+def _resolve_path(path_str: str) -> Path:
+    path = Path(path_str).expanduser()
+    if not path.is_absolute():
+        path = (_ROOT / path).resolve()
+    return path
+
+
+def _get_paths() -> ExtractionPaths:
+    cfg = CFG.get("formulas", {})
+    markdown_dir = _resolve_path(cfg.get("markdown_dir", "processed/nougat_md"))
+    text_dir = _resolve_path(cfg.get("text_dir", "processed/nougat_txt"))
+    metadata_file = _resolve_path(cfg.get("metadata_file", "metadata/formulas.jsonl"))
+
+    text_dir.mkdir(parents=True, exist_ok=True)
+    metadata_file.parent.mkdir(parents=True, exist_ok=True)
+
+    return ExtractionPaths(markdown_dir=markdown_dir, text_dir=text_dir, metadata_file=metadata_file)
+
+
+def norm_formula(latex: str) -> str:
+    """Normalize LaTeX formulas by stripping and collapsing whitespace."""
+
+    return re.sub(r"\s+", " ", latex.strip())
+
+
+def hash_formula(latex: str) -> str:
+    """Return a short, deterministic hash for a LaTeX formula."""
+
+    return hashlib.md5(latex.encode("utf-8")).hexdigest()[:12]
+
+
+def extract_formulas_from_md(md_path: Path, *, deduplicate: bool = True) -> Tuple[str, List[dict]]:
+    """Extract formulas from a Nougat markdown file.
+
+    Args:
+        md_path: Path to the markdown/mmd file.
+        deduplicate: If ``True`` the same formula type/hash combination per document is only
+            recorded once in the metadata while still replacing all occurrences in the text output.
+
+    Returns:
+        Tuple containing the processed text (with placeholders) and a list of metadata entries.
+    """
+
     text = md_path.read_text(encoding="utf-8", errors="ignore")
     doc_id = md_path.stem
-    formulas = []
+    formulas: List[dict] = []
+    seen: set[Tuple[str, str, str]] = set()
 
-    # Process text to replace formulas with placeholders
-    replaced = text
-    
-    # Block formulas first
-    for match in FORMULA_BLOCK.finditer(text):
-        original = match.group(0)
-        inner = norm_formula(match.group(1))
-        h = hash_formula(inner)
-        placeholder = f" FORMULA_{h} "
-        replaced = replaced.replace(original, placeholder)
-        formulas.append({
-            "doc_id": doc_id, 
-            "hash": h, 
-            "type": "block", 
-            "latex": inner
-        })
+    def register_formula(kind: str, raw_latex: str) -> str:
+        latex = norm_formula(raw_latex)
+        formula_hash = hash_formula(latex)
+        key = (formula_hash, doc_id, kind)
 
-    # Inline formulas
-    for match in FORMULA_INLINE.finditer(text):
-        original = match.group(0)
-        inner = norm_formula(match.group(1))
-        h = hash_formula(inner)
-        placeholder = f" FORMULA_{h} "
-        replaced = replaced.replace(original, placeholder)
-        formulas.append({
-            "doc_id": doc_id, 
-            "hash": h, 
-            "type": "inline", 
-            "latex": inner
-        })
+        if not deduplicate or key not in seen:
+            seen.add(key)
+            formulas.append(
+                {
+                    "doc_id": doc_id,
+                    "hash": formula_hash,
+                    "type": kind,
+                    "latex": latex,
+                    "source": md_path.name,
+                }
+            )
+
+        return f"FORMULA_{formula_hash}"
+
+    def replace_block(match: Match[str]) -> str:
+        placeholder = register_formula("block", match.group(1))
+        return f"\n{placeholder}\n"
+
+    def replace_inline(match: Match[str]) -> str:
+        placeholder = register_formula("inline", match.group(1))
+        return f" {placeholder} "
+
+    replaced = FORMULA_BLOCK.sub(replace_block, text)
+    replaced = FORMULA_INLINE.sub(replace_inline, replaced)
 
     return replaced, formulas
 
 
-def process_all_markdown_files() -> list[dict]:
-    """Process all markdown files and extract formulas."""
-    all_formulas = []
-    md_files = list(MD_DIR.glob("*.md")) + list(MD_DIR.glob("*.mmd"))
-    
-    print(f"Processing {len(md_files)} markdown files...")
-    
-    for md_path in md_files:
-        replaced_text, formulas = extract_formulas_from_md(md_path)
-        all_formulas.extend(formulas)
-        
-        # Save processed text (markdown without raw formulas)
-        out_file = OUT_TEXT_DIR / f"{md_path.stem}.txt"
-        out_file.write_text(replaced_text, encoding="utf-8")
-    
-    return all_formulas
+def _iter_markdown_files(path: Path) -> Iterator[Path]:
+    yield from sorted(path.glob("*.md"))
+    yield from sorted(path.glob("*.mmd"))
 
 
-def save_formulas_jsonl(formulas: list[dict]) -> Path:
-    """Save formulas to JSONL file."""
-    with FORMULA_JSONL.open("w", encoding="utf-8") as f:
+def process_all_markdown_files(*, show_progress: bool = True, deduplicate: bool = True) -> List[dict]:
+    """Process all Nougat markdown files and return extracted formula records."""
+
+    setup_pipeline_logging()
+    paths = _get_paths()
+    md_files = list(_iter_markdown_files(paths.markdown_dir))
+
+    if not md_files:
+        logger.warning("Keine Nougat-Markdowns unter %s gefunden.", paths.markdown_dir)
+        return []
+
+    logger.info("Starte Formel-Extraktion für %s Dateien", len(md_files))
+
+    collected: List[dict] = []
+    iterator = tqdm(md_files, desc="Formeln", unit="datei", disable=not show_progress, leave=False)
+
+    for md_path in iterator:
+        try:
+            replaced, formulas = extract_formulas_from_md(md_path, deduplicate=deduplicate)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Formeln konnten aus %s nicht extrahiert werden", md_path.name)
+            continue
+
+        out_file = paths.text_dir / f"{md_path.stem}.txt"
+        out_file.write_text(replaced, encoding="utf-8")
+        collected.extend(formulas)
+
+    return collected
+
+
+def save_formulas_jsonl(formulas: Iterable[dict], output: Path) -> Path:
+    """Persist extracted formulas as JSONL file."""
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("w", encoding="utf-8") as handle:
         for row in formulas:
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
-    return FORMULA_JSONL
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+    return output
 
 
-def extract_all_formulas() -> dict:
-    """Extract all formulas from markdown files."""
-    formulas = process_all_markdown_files()
-    output_file = save_formulas_jsonl(formulas)
-    
-    print(f"Formeln extrahiert: {len(formulas)} → {output_file}")
-    
-    return {
-        'total_formulas': len(formulas),
-        'output_file': output_file,
-        'text_dir': OUT_TEXT_DIR,
-        'formulas': formulas
+def extract_all_formulas(*, show_progress: bool = True, deduplicate: bool = True) -> dict:
+    """Extract formulas from all Nougat markdown files and persist metadata/text outputs."""
+
+    setup_pipeline_logging()
+    paths = _get_paths()
+    md_files = list(_iter_markdown_files(paths.markdown_dir))
+
+    summary = {
+        "total": len(md_files),
+        "processed": 0,
+        "documents_with_formulas": 0,
+        "documents_without_formulas": 0,
+        "total_formulas": 0,
+        "errors": [],
+        "output_file": str(paths.metadata_file),
+        "text_dir": str(paths.text_dir),
     }
+
+    if not md_files:
+        logger.warning("Keine Nougat-Markdowns unter %s gefunden.", paths.markdown_dir)
+        return summary
+
+    logger.info("Starte Formel-Extraktion für %s Dateien", len(md_files))
+
+    iterator = tqdm(
+        md_files,
+        desc="Formel-Extraktion",
+        unit="datei",
+        disable=not show_progress,
+        leave=False,
+    )
+
+    with paths.metadata_file.open("w", encoding="utf-8") as handle:
+        for md_path in iterator:
+            try:
+                replaced, formulas = extract_formulas_from_md(md_path, deduplicate=deduplicate)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Formeln konnten aus %s nicht extrahiert werden", md_path.name)
+                summary["errors"].append({"file": str(md_path), "error": str(exc)})
+                continue
+
+            try:
+                out_file = paths.text_dir / f"{md_path.stem}.txt"
+                out_file.write_text(replaced, encoding="utf-8")
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Textersatz konnte nicht nach %s geschrieben werden", out_file)
+                summary["errors"].append({"file": str(out_file), "error": str(exc)})
+                continue
+
+            for row in formulas:
+                handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+            summary["processed"] += 1
+            summary["total_formulas"] += len(formulas)
+            if formulas:
+                summary["documents_with_formulas"] += 1
+            else:
+                summary["documents_without_formulas"] += 1
+
+    logger.info(
+        "Formel-Extraktion abgeschlossen – %s Dateien verarbeitet, %s Formeln erfasst",
+        summary["processed"],
+        summary["total_formulas"],
+    )
+
+    if summary["errors"]:
+        logger.warning("Bei %s Dateien traten Fehler auf.", len(summary["errors"]))
+
+    return summary
+
+
+__all__ = [
+    "ExtractionPaths",
+    "extract_all_formulas",
+    "extract_formulas_from_md",
+    "hash_formula",
+    "norm_formula",
+    "process_all_markdown_files",
+    "save_formulas_jsonl",
+]
