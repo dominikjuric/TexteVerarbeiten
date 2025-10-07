@@ -3,4 +3,4 @@
 *.onnx filter=lfs diff=lfs merge=lfs -text
 *.zip filter=lfs diff=lfs merge=lfs -text
 *.tar.gz filter=lfs diff=lfs merge=lfs -text
-*.pdf filter=lfs diff=lfs merge=lfs -text
+# Note: Do NOT track PDFs with LFS to keep pushes small; PDFs live in raw/ and are ignored

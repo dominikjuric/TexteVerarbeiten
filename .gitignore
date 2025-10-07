@@ -1,10 +1,15 @@
 # === Projekt-spezifisch (Daten & Texte) ===
 raw/                 # Rohdaten
 txt/                 # Textausgaben / Texte
+txt_nougat/          # Nougat-Markdown-Ausgaben
 notes/               # persönliche Notizen (falls lokal halten)
 metadata/            # generierte Metadaten
 ocr/                 # OCR-Zwischenstände/Ergebnisse
 processed/           # (optional) abgeleitete Daten/Ergebnisse
+data/outputs/        # generierte Outputs (z. B. Exporte)
+processed/chroma_db/
+processed/whoosh_index/
+.chroma/
 tmp*/
 tmp_*/
 tmp_nougat/
